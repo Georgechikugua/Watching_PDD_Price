@@ -582,6 +582,7 @@ def fetch_pdd(items):
                         result[sku] = (None, None, "商品已售罄或已下架,换一个在售的链接吧",
                                        canonical)
                         continue
+                    price, title = _pdd_price_from_page(page, sku, body_text)
                     # 部分补贴商品网页端故意藏价("前往APP查看价格"),任何工具都拿不到,
                     # 引导用户手动记录
                     if ("前往APP查看价格" in body_text[:2000]
@@ -590,7 +591,6 @@ def fetch_pdd(items):
                                        "该商品仅App可查价。手机上看到价格后运行: "
                                        "python tracker.py note 序号 价格", canonical)
                         continue
-                    price, title = _pdd_price_from_page(page, sku, body_text)
                     if price:
                         result[sku] = (price, title, None, canonical)
                     else:
