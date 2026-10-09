@@ -990,6 +990,90 @@ def cmd_publish():
         log(f"GitHub 发布异常,跳过: {e}")
 
 
+def cmd_setup():
+    """新用户初始设置向导:环境检查 → 商品 → 计划任务 → GitHub 发布。"""
+    print("=" * 46)
+    print(" 价格盯盘 · 初始设置向导")
+    print("=" * 46)
+
+    # 1) 抓取环境
+    if not PW:
+        print("\n[1/4] 缺少 playwright(浏览器抓取引擎)。")
+        ans = input("      现在自动安装吗?(回车=安装,输入 n=稍后自己装): ").strip().lower()
+        if ans in ("", "y", "yes"):
+            import subprocess
+            print("      正在安装 playwright …")
+            subprocess.run([sys.executable, "-m", "pip", "install", "playwright"])
+            subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"])
+            print("      完成。")
+        else:
+            print("      之后请手动运行: pip install playwright && python -m playwright install chromium")
+    else:
+        print("\n[1/4] 抓取环境 OK(playwright 已安装)。")
+
+    # 2) 商品列表
+    if not CONFIG.exists():
+        save_config({"products": []})
+    if not load_config().get("products"):
+        print("\n[2/4] 添加第一个商品(拼多多 App 里 分享→复制链接,直接粘贴):")
+        u = input("      链接(回车跳过): ").strip()
+        if u:
+            cmd_add(u, None)
+    else:
+        print(f"\n[2/4] 商品列表已有 {len(load_config()['products'])} 件,跳过。")
+
+    # 3) 每日计划任务
+    ans = input("\n[3/4] 注册每天 09:30 自动抓取的 Windows 计划任务?(y=注册,回车=跳过): "
+                ).strip().lower()
+    if ans in ("y", "yes"):
+        import subprocess
+        bat = BASE / "run_tracker.bat"
+        bat.write_text(
+            '@echo off\r\nrem price tracker daily job\r\n'
+            f'cd /d "{BASE}"\r\n"{sys.executable}" tracker.py all\r\n',
+            encoding="ascii", errors="replace")
+        r = subprocess.run(
+            ["schtasks", "/create", "/f", "/tn", "PriceTracker",
+             "/sc", "daily", "/st", "09:30", "/tr", f'"{bat}"'],
+            capture_output=True, text=True, shell=True)
+        out = (r.stdout or r.stderr or "").strip()
+        print("      " + (out if out else ("已注册(下次运行请看任务计划程序)。")))
+        print("      删除任务: schtasks /delete /tn PriceTracker /f")
+
+    # 4) GitHub Pages 自动发布
+    ans = input("\n[4/4] 配置发布到自己的 GitHub Pages?(y=配置,回车=跳过): ").strip().lower()
+    if ans in ("y", "yes"):
+        user = input("      GitHub 用户名: ").strip()
+        repo_name = input("      仓库名(需先在 GitHub 上新建 Public 仓库并勾选 README): ").strip()
+        tok = input("      Fine-grained token(需 Contents/Pages/Administration 读写): ").strip()
+        if user and repo_name and tok:
+            import base64
+            import urllib.request
+            req = urllib.request.Request(
+                f"https://api.github.com/repos/{user}/{repo_name}",
+                headers={"Authorization": f"Bearer {tok}",
+                         "Accept": "application/vnd.github+json"})
+            try:
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    ok = (r.status == 200)
+            except urllib.error.HTTPError as e:
+                ok = False
+                print(f"      token 验证失败(http {e.code}),请检查仓库名与权限。")
+            except OSError as e:
+                ok = False
+                print(f"      网络异常: {e}")
+            if ok:
+                (DATA_DIR / ".github-token").write_text(tok)
+                (DATA_DIR / ".github-repo").write_text(f"{user}/{repo_name}")
+                print(f"      配置已保存,之后每次抓取自动发布到 "
+                      f"https://{user.lower()}.github.io/{repo_name}/")
+        else:
+            print("      信息不完整,跳过(可重新运行 setup)。\n")
+
+    print("\n全部完成!以后每天自动运行;想立刻抓一次: python tracker.py all")
+    print("查看商品: python tracker.py list | 手机临时查看: python tracker.py serve")
+
+
 # ---------------------------------------------------------------- 页面渲染
 
 def esc(s):
@@ -1167,6 +1251,7 @@ def main():
     sub.add_parser("fetch", help="抓取全部商品价格")
     sub.add_parser("dashboard", help="生成手机端页面")
     sub.add_parser("publish", help="发布页面到 GitHub Pages")
+    sub.add_parser("setup", help="新用户初始设置向导")
     sub.add_parser("all", help="fetch + dashboard + publish")
     sub.add_parser("login", help="扫码登录拼多多(一次性,登录态长期复用)")
     sub.add_parser("login-jd", help="登录京东(商品页取价用,可选)")
@@ -1186,6 +1271,8 @@ def main():
         cmd_dashboard()
     elif args.cmd == "publish":
         cmd_publish()
+    elif args.cmd == "setup":
+        cmd_setup()
     elif args.cmd == "all":
         cmd_fetch()
         cmd_dashboard()
