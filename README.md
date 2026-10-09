@@ -1,76 +1,75 @@
-# 价格盯盘
+# 价格盯盘 🏷️
 
-每天自动抓取你想买的商品(拼多多 / 京东 / 其他电商)的价格,存进本地数据库,
-生成手机端友好的页面,随时随地查看:价格走势、近期最低价、今日涨跌一目了然。
+每天自动抓取你关注的商品(**拼多多 / 京东 / 其他电商**)价格,生成手机端友好的页面并发布到你自己的 GitHub Pages:价格走势、近期最低价、今日涨跌一目了然。
 
-**线上页面**:https://georgechikugua.github.io/Watching_PDD_Price/(每次抓取后自动更新)
+> **线上示例(作者自己的监控页)**:<https://georgechikugua.github.io/Watching_PDD_Price/>
+> 你按下面步骤跑起来后,会得到一个属于你自己的同样页面。
 
-工作方式:拼多多只给"真浏览器"正常页面(自动化浏览器会被风控返回假数据),
-所以抓取用的是系统安装的 Chrome 本体挂本地调试端口,登录也在它里面完成;
-抓取完成后通过 GitHub API 把页面发布到 GitHub Pages,无需服务器常开。
+## 它是怎么工作的
 
-## 第一次使用(3 步)
+电商平台只给"真浏览器"正常页面——自动化浏览器会被拼多多风控识别并返回**假的"售罄"数据**。所以本项目用你电脑上安装的 **Chrome 本体**挂本地调试端口来抓取(浏览器进程不带任何自动化痕迹),你登录一次拼多多,之后每天定时用同一环境抓取,会话稳定。抓取完成后通过 GitHub API 把页面发布到 GitHub Pages,**不需要服务器**。
 
-```bat
-:: 1. 登录拼多多(弹出浏览器窗口,扫码或验证码登录一次,长期有效)
-python tracker.py login
-
-:: 2. 添加你想盯的商品(链接用拼多多 App 里"分享-复制链接"拿到的)
-python tracker.py add "https://mobile.yangkeduo.com/goods.html?goods_sign=XXXX"
-
-:: 3. 立刻抓一次并生成页面
-python tracker.py all
+```
+每天 09:30 计划任务 → 真实 Chrome 打开商品页 → 解析价格 → SQLite 存档
+                    → 生成手机端页面 → 自动发布 GitHub Pages
 ```
 
-想顺便盯京东商品,再运行一次 `python tracker.py login-jd`(可选),
-然后 `add` 京东商品链接即可。其他网站(苹果官网等)不用登录,直接 add。
+## 快速开始(Windows,约 10 分钟)
 
-## 手机上怎么看
+### 0. 准备
 
-```bat
-python tracker.py serve
-```
+- Windows 电脑 + 已安装 [Python 3.10+](https://www.python.org/downloads/)(安装时勾选 **Add Python to PATH**)
+- 已安装 Google Chrome
+- 一个 GitHub 账号(可选,用于手机端查看)
 
-会打印出类似 `http://192.168.1.5:8788` 的地址,手机连同一个 Wi-Fi,
-浏览器打开即可(电脑开机、命令运行着才能访问)。每天抓取的数据都保留,
-可以天天看走势。
+### 1. 下载项目
 
-> 也可以把 `serve` 做成开机自启:任务计划程序里新建"登录时启动"任务,
-> 程序填 `pythonw.exe`,参数 `tracker.py serve`。
+点本页面右上角 **Code → Download ZIP**,解压到任意目录。
 
-## 日常命令
+### 2. 双击 `install.bat`
+
+它会自动:安装依赖 → 下载浏览器内核(走国内镜像)→ 启动设置向导。
+
+向导里依次完成:
+
+1. **添加第一个商品**:在拼多多 App 里 分享 → 复制链接,直接粘贴(京东/其他网站商品同理)
+2. **注册每日计划任务**:输入 `y`,以后每天 09:30 自动抓取
+3. **(可选)配置 GitHub 发布**:
+   - 新建一个 **Public** 仓库(勾选 Add a README)
+   - 按 [GitHub 文档](https://docs.github.com/zh/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) 生成 **Fine-grained token**:只选这个仓库,权限勾 `Contents`、`Pages`、`Administration` 三项 **Read and write**
+   - 在向导里输入用户名 / 仓库名 / token,验证通过即配置完成
+
+### 3. 完成
+
+向导结束后运行一次 `python tracker.py all`(或重跑 `install.bat`),你的页面就上线了:
+`https://你的用户名.github.io/仓库名/`,手机收藏即可。
+
+## 日常使用
 
 | 命令 | 作用 |
 | --- | --- |
-| `python tracker.py all` | 抓价 + 生成页面(计划任务每天 09:30 自动跑) |
-| `python tracker.py fetch` | 只抓价 |
-| `python tracker.py dashboard` | 只生成页面 |
-| `python tracker.py serve` | 启动手机端查看服务(端口 8788) |
-| `python tracker.py list` | 看在盯的商品和状态 |
-| `python tracker.py add 链接 [名称]` | 添加商品 |
-| `python tracker.py remove 链接或序号` | 移除商品 |
-| `python tracker.py login` / `login-jd` | 重新登录拼多多 / 京东 |
+| `python tracker.py all` | 抓取 + 生成页面 + 发布(计划任务每天自动跑) |
+| `python tracker.py add "商品链接"` | 添加商品(支持拼多多分享码/短链,自动规范化) |
+| `python tracker.py list` | 查看在盯的商品和状态 |
+| `python tracker.py remove 序号或链接` | 移除商品 |
+| `python tracker.py serve` | 局域网内临时查看(手机连同一 Wi-Fi) |
+| `python tracker.py login` | 拼多多登录失效后重新登录(弹出的就是你的 Chrome) |
+| `python tracker.py login-jd` | 盯京东商品前登录一次京东 |
 
-商品列表就是 `products.json`,直接编辑也可以(多个商品则 put 多行)。
+## 常见问题
 
-## 自动抓取
+- **提示"拼多多登录已失效"** → 运行 `python tracker.py login`,在弹出的 Chrome 里重新登录一次
+- **提示"商品已售罄或已下架"** → 这是页面的真实状态,换一个在售链接
+- **某天电脑关机了** → 当天缺一个价格点,开机后跑一次 `python tracker.py all` 补上
+- **抓取时屏幕角落闪过 Chrome 窗口** → 正常现象(抓取窗口放在屏幕外)
+- **隐私** → 拼多多登录态、GitHub token、价格数据库全部只存在本机 `data/` 目录,不会被上传;仓库里只有页面和代码
 
-已注册 Windows 计划任务 **PriceTracker**:每天 09:30 运行 `run_tracker.bat`
-(= `tracker.py all`)。删除任务:`schtasks /delete /tn PriceTracker`。
-改时间:`schtasks /change /tn PriceTracker /st 10:00`。
+## 限制
 
-注意:电脑关机当天就不会抓;开机后手动跑一次 `python tracker.py all` 补上即可。
+- 需要 Windows + Chrome(抓取依赖真实浏览器环境)
+- 拼多多价格是"当前账号看到的补贴价",会随账号/活动浮动,记录的是你账号的视角
+- 仅供个人学习研究使用,请遵守各平台服务条款,勿用于商业用途
 
-## 说明与排障
+## License
 
-- 价格一天只记一个点(当天最后一次抓取),图表最多回看 120 天。
-- 拼多多登录态失效时,页面会提示重新 `login`;抓取失败的商品不影响其他商品。
-- 某商品连续解析失败时,`data/debug/<商品>/` 下会留下当时的页面快照和截图,
-  排查反爬变化用。
-- 数据都在 `data/prices.db`(SQLite),备份/迁移拷这一个文件就行。
-- 拼多多会把"自动化浏览器"识别出来并返回假的"售罄"页,所以抓取用的是你电脑
-  上的 **Chrome 本体**(挂本地调试端口,不带自动化痕迹),登录也在它里面完成,
-  登录和抓取同环境,会话最稳。抓取时窗口在屏幕外一闪而过属正常现象。
-- 拼多多登录态失效时,页面会提示重新 `login`;抓取失败的商品不影响其他商品。
-- 京东商品不登录容易拿到壳页面,建议 `login-jd` 后再盯京东商品。
-- 隐私:登录态和数据库都只存在本机,不经过任何第三方。
+MIT
