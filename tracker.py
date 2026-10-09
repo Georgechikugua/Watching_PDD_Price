@@ -25,6 +25,7 @@
 
 import argparse
 import json
+import random
 import re
 import sqlite3
 import sys
@@ -553,7 +554,10 @@ def fetch_pdd(items):
         try:
             browser, ctx = cdp_context(pw)
             page = ctx.new_page()
-            for sku, url in items:
+            for i, (sku, url) in enumerate(items):
+                # 商品之间随机停 9~18 秒:连续快刷会被风控踢会话
+                if i > 0:
+                    page.wait_for_timeout(random.randint(9_000, 18_000))
                 try:
                     page.goto(url, timeout=45_000, wait_until="domcontentloaded")
                     page.wait_for_timeout(6_000)
@@ -561,7 +565,12 @@ def fetch_pdd(items):
                         result[sku] = (None, None,
                                        "拼多多登录已失效,请在电脑上运行: python tracker.py login",
                                        None)
-                        continue
+                        # 熔断:会话已失效,后续不再访问,避免反复撞登录页加重风控
+                        for rest_sku, _ in items[i + 1:]:
+                            result[rest_sku] = (None, None,
+                                                "会话失效,本次未抓取(重新登录后下次运行会补上)",
+                                                None)
+                        break
                     m = (re.search(r"goods_sign=([A-Za-z0-9_-]+)", page.url)
                          or re.search(r"goods_id=(\d+)", page.url))
                     canonical = m.group(1) if m else sku
@@ -572,6 +581,14 @@ def fetch_pdd(items):
                     if any(k in body_text[:600] for k in PDD_DEAD_MARKERS):
                         result[sku] = (None, None, "商品已售罄或已下架,换一个在售的链接吧",
                                        canonical)
+                        continue
+                    # 部分补贴商品网页端故意藏价("前往APP查看价格"),任何工具都拿不到,
+                    # 引导用户手动记录
+                    if ("前往APP查看价格" in body_text[:2000]
+                            or re.search(r"[¥￥]\s*\d\?\?[\d?.]*\?", body_text[:2000])):
+                        result[sku] = (None, title,
+                                       "该商品仅App可查价。手机上看到价格后运行: "
+                                       "python tracker.py note 序号 价格", canonical)
                         continue
                     price, title = _pdd_price_from_page(page, sku, body_text)
                     if price:
@@ -1074,6 +1091,34 @@ def cmd_setup():
     print("查看商品: python tracker.py list | 手机临时查看: python tracker.py serve")
 
 
+def cmd_note(key, price_str):
+    """手动记录一个价格点(用于仅 App 可查价的商品)。"""
+    p = _valid_price(price_str)
+    if not p:
+        print(f"价格看不懂: {price_str}(示例: python tracker.py note 2 329)")
+        return
+    cfg = load_config()
+    for i, it in enumerate(cfg.get("products", [])):
+        site, sku = detect(it["url"])
+        if str(i + 1) == str(key) or it["url"] == key or sku == key:
+            conn = db()
+            today = datetime.now().strftime("%Y-%m-%d")
+            conn.execute(
+                "INSERT INTO prices(sku,day,ts,price,source) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(sku,day) DO UPDATE SET ts=excluded.ts, "
+                "price=excluded.price, source='manual'",
+                (sku, today, now_str(), p, "manual"))
+            conn.execute("UPDATE products SET last_ok=?, last_error=NULL WHERE sku=?",
+                         (now_str(), sku))
+            prow = conn.execute("SELECT name FROM products WHERE sku=?", (sku,)).fetchone()
+            conn.commit()
+            conn.close()
+            print(f"已记录「{prow['name'] if prow and prow['name'] else sku}」"
+                  f"今天的价格 {fmt_price(p)}(手动)")
+            return
+    print(f"没找到 {key},先用 list 查看编号。")
+
+
 # ---------------------------------------------------------------- 页面渲染
 
 def esc(s):
@@ -1263,6 +1308,9 @@ def main():
     p_add.add_argument("name", nargs="?")
     p_rm = sub.add_parser("remove", help="移除商品(链接或 list 里的序号)")
     p_rm.add_argument("key")
+    p_note = sub.add_parser("note", help="手动记录价格(仅App可查价的商品用)")
+    p_note.add_argument("key", help="list 里的序号或商品链接")
+    p_note.add_argument("price", help="价格,如 329 或 2051.88")
     args = ap.parse_args()
 
     if args.cmd == "fetch":
@@ -1289,6 +1337,8 @@ def main():
         cmd_add(args.url, args.name)
     elif args.cmd == "remove":
         cmd_remove(args.key)
+    elif args.cmd == "note":
+        cmd_note(args.key, args.price)
 
 
 if __name__ == "__main__":
